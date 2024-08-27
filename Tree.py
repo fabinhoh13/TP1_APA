@@ -13,18 +13,19 @@ class Tree:
         self.root = root
         self.vessels = []
         self.nodes = [root]
-        self.medium_nodes = []
-        self.kd_tree = KDTree()
         self.collision_radius = 0.01  # Defina um raio de colisão mínimo
 
     def add_terminal_node(self, x, y, flow=1.0):
-        nearest_node = self.find_nearest_node(x, y)
-        
-        if nearest_node is None:
-            print("No valid parent node found for the new terminal node. Skipping node.")
-            return None
+        if len(self.nodes) == 1:
+            new_node = Node(x, y, flow, self.root)
+            new_vessel = Vessel(self.root, new_node)
 
-        valid_parent_node = self.find_valid_parent_node(x, y, nearest_node)
+            self.vessels.append(new_vessel)
+            self.nodes.append(new_node)
+            self.kd_tree = KDTree([new_vessel.get_medium_point()])
+        
+
+        valid_parent_node = self.find_valid_parent_node(x, y)
         if valid_parent_node is None:
             print(f"No valid parent node found for the new terminal node at ({x}, {y}). Node not added.")
             return None
@@ -38,7 +39,7 @@ class Tree:
 
         self.vessels.append(new_vessel)
         self.nodes.append(new_node)
-        self.kd_tree = KDTree([(node.x, node.y) for node in self.nodes])
+        self.kd_tree = KDTree([vessel.get_medium_point() for vessel in self.vessels])
 
         self.local_optimization(new_node)
 
@@ -46,20 +47,31 @@ class Tree:
         return new_node
 
     def find_nearest_node(self, x, y):
-        if self.kd_tree.size == 0:
-            return None
         distance, index = self.kd_tree.query((x, y))
-        return self.nodes[index]
-
-    def find_valid_parent_node(self, x, y, initial_node):
-        if self.kd_tree.size == 0:
+        if self.vessels[index] is None:
             return None
-        distances, indices = self.kd_tree.query((x, y), k=len(self.medium_nodes))
+        xn, yn = self.vessels[index].get_medium_point()
+        new_node = Node(xn, yn, self.vessels[index].medium_point_flow)
+        return new_node
+
+    def find_valid_parent_node(self, x, y):
+        distances, indices = self.kd_tree.query((x, y), k=len(self.vessels))
         if isinstance(indices, np.int64):  # Verificar se indices é um único valor
             indices = [indices]  # Converter para lista
         for index in indices:
-            potential_parent = self.medium_nodes[index]
-            if len(potential_parent.children) < 2 and not self.check_collision(x, y, potential_parent):
+            vessel = self.vessels[index]
+            if vessel.usedMedium:
+                continue
+            xn, yn = vessel.get_medium_point()
+            potential_parent = Node(xn, yn, self.vessels[index].medium_point_flow)
+            if not self.check_collision(x, y, potential_parent):
+                vessel.usedMedium = True
+                potential_parent.children.append(vessel.child)
+                potential_parent.children.append(vessel.parent)
+                new_vessel = Vessel(potential_parent, vessel.child)
+                self.vessels[index].child = potential_parent
+                self.vessels.append(new_vessel)
+                self.nodes.append(potential_parent)
                 return potential_parent
         return None
     
