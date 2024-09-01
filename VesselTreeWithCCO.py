@@ -10,7 +10,7 @@ def generate_terminal_points(num_points, space_size=1.0):
     return points, flows
 
 def main():
-    num_terminals = 20
+    num_terminals = 100
     root = Node(0.1, 0.1, flow=num_terminals)
     tree = Tree(root)
 

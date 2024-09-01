@@ -13,7 +13,7 @@ class Tree:
         self.root = root
         self.vessels = []
         self.nodes = [root]
-        self.collision_radius = 0.01  # Defina um raio de colisão mínimo
+        self.collision_radius = 0.001  # Defina um raio de colisão mínimo
 
     def add_terminal_node(self, x, y, flow=1.0):
         if len(self.nodes) == 1:
