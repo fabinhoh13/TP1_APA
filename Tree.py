@@ -5,6 +5,11 @@ from Node import Node
 from Vessel import Vessel
 import numpy as np
 
+
+
+
+
+
 class Tree:
     def __init__(self, root):
         if root is None:
@@ -14,71 +19,112 @@ class Tree:
         self.nodes = [root]
         self.collision_radius = 0.1
 
+
     def check_collision(self, x, y, parent_node):
-        margin = 0.005  # Margem de segurança adicional
+        margin = 0.02  # Aumentando a margem de segurança
+        new_position = np.array([x, y])
+
         for node in self.nodes:
-            dist = np.linalg.norm(node.position() - np.array([x, y]))
-            #print(f"Checking collision with node at ({node.x}, {node.y}) - Distance: {dist}, Threshold: {self.collision_radius + margin}")
+            dist = np.linalg.norm(node.position() - new_position)
             if dist < (self.collision_radius + margin):
-               # print(f"Collision detected with node at ({node.x}, {node.y})")
+                print(f"Colisão detectada com nó na posição ({node.x}, {node.y})")
                 return True
 
         for vessel in self.vessels:
-            if self.do_edges_intersect(parent_node.position(), np.array([x, y]), vessel.parent.position(), vessel.child.position()):
-                print(f"Collision detected with vessel between ({vessel.parent.x}, {vessel.parent.y}) and ({vessel.child.x}, {vessel.child.y})")
+            if self.do_edges_intersect(parent_node.position(), new_position, vessel.parent.position(), vessel.child.position()):
+                print(f"Colisão detectada com o vaso entre ({vessel.parent.x}, {vessel.parent.y}) e ({vessel.child.x}, {vessel.child.y})")
                 return True
 
         return False
 
-
     def add_terminal_node(self, x, y, flow=1.0):
-        if len(self.nodes) == 1:
+        if len(self.nodes) == 1:  # Primeiro nó além da raiz
             new_node = Node(x, y, flow, self.root)
             new_vessel = Vessel(self.root, new_node)
-
             self.vessels.append(new_vessel)
             self.nodes.append(new_node)
             self.kd_tree = KDTree([new_vessel.get_medium_point()])
+            return new_node
 
-        valid_parent_node = self.find_valid_parent_node(x, y)
-        if valid_parent_node is None:
-            print(f"No valid parent node found for the new terminal node at ({x}, {y}). Node not added.")
-            return None       
+        # Encontre o vaso mais próximo para adicionar o novo nó ao ponto médio
+        nearest_vessel = self.find_nearest_vessel(x, y)
+        if nearest_vessel is None:
+            print(f"Nenhum vaso válido encontrado para o nó na posição ({x}, {y}).")
+            return None
 
-        new_node = Node(x, y, flow, valid_parent_node)
-        new_vessel = Vessel(valid_parent_node, new_node)
+        # Conectar ao ponto médio do vaso
+        mid_x, mid_y = nearest_vessel.get_medium_point()
+        parent_node = Node(mid_x, mid_y, 0, nearest_vessel.parent)
+        nearest_vessel.child.parent = parent_node
 
-        self.vessels.append(new_vessel)
+        new_node = Node(x, y, flow, parent_node)
+        new_vessel1 = Vessel(parent_node, nearest_vessel.child)
+        new_vessel2 = Vessel(parent_node, new_node)
+
+        self.vessels.append(new_vessel1)
+        self.vessels.append(new_vessel2)
+        self.nodes.append(parent_node)
         self.nodes.append(new_node)
+
         self.kd_tree = KDTree([vessel.get_medium_point() for vessel in self.vessels])
 
         self.local_optimization(new_node)
 
-        # Propagar o fluxo de baixo para cima
-        self.update_flows(new_node)
-
-        print(f"Node at ({x}, {y}) added successfully.")
+        print(f"Nó na posição ({x}, {y}) adicionado com sucesso.")
         return new_node
 
-    def update_flows(self, node):
-        # Atualiza o fluxo de baixo para cima até a raiz
-        while node.parent is not None:
-            parent = node.parent
-            total_flow = sum(child.flow for child in parent.children)
-            if parent.flow != total_flow:
-                print(f"Atualizando fluxo: Nó pai ({parent.x}, {parent.y}) - Fluxo antes: {parent.flow}, Fluxo atualizado: {total_flow}")
-                parent.flow = total_flow
-            node = parent
+    def find_nearest_vessel(self, x, y):
+        # Encontre o vaso mais próximo com base no ponto médio
+        distances, indices = self.kd_tree.query((x, y), k=len(self.vessels))
+        if isinstance(indices, np.int64):
+            indices = [indices]
+        for index in indices:
+            vessel = self.vessels[index]
+            if not vessel.usedMedium:
+                vessel.usedMedium = True
+                return vessel
+        return None
 
+    def print_tree_structure(self, node=None, level=0):
+        if node is None:
+            node = self.root
+            print(f"Nó raiz na posição ({node.x}, {node.y}) com fluxo {node.flow}")
+        else:
+            print("  " * level + f"Nó filho de ({node.parent.x}, {node.parent.y}) na posição ({node.x}, {node.y}) com fluxo {node.flow}")
+        
+        for child in node.children:
+            self.print_tree_structure(child, level + 1)
+
+    def update_all_flows(self):
+        def somar_fluxos_pos_ordem(node):
+            if not node.children:  # Nó folha
+                print(f"Nó folha na posição ({node.x}, {node.y}) com fluxo {node.flow}")
+                return node.flow
+            
+            # Somar o fluxo dos filhos
+            fluxo_total = 0
+            for child in node.children:
+                fluxo_total += somar_fluxos_pos_ordem(child)
+            
+            # Atualiza o fluxo do nó atual com o total acumulado dos filhos
+            node.flow = fluxo_total
+            print(f"Atualizando nó na posição ({node.x}, {node.y}): Fluxo total dos filhos = {node.flow}")
+            return node.flow
+
+        somar_fluxos_pos_ordem(self.root)
 
 
     def find_nearest_node(self, x, y):
-        distance, index = self.kd_tree.query((x, y))
-        if self.vessels[index] is None:
-            return None
-        xn, yn = self.vessels[index].get_medium_point()
-        new_node = Node(xn, yn, self.vessels[index].medium_point_flow)
-        return new_node
+        # Encontre o nó mais próximo (ponto médio)
+        distances, indices = self.kd_tree.query((x, y), k=len(self.vessels))
+        if isinstance(indices, np.int64):
+            indices = [indices]
+        for index in indices:
+            vessel = self.vessels[index]
+            if not vessel.usedMedium:
+                vessel.usedMedium = True
+                return vessel.parent
+        return None
 
     def find_valid_parent_node(self, x, y):
         distances, indices = self.kd_tree.query((x, y), k=len(self.vessels))
@@ -134,9 +180,9 @@ class Tree:
             y_values = [vessel.parent.y, vessel.child.y]
             plt.plot(x_values, y_values, color='blue', linewidth=vessel.diameter * 2)
 
-            # Adicionando os fluxos no ponto médio dos vasos
-            mid_x, mid_y = vessel.get_medium_point()
-            plt.text(mid_x, mid_y, f'{vessel.parent.flow:.1f}', color='green', fontsize=10, ha='center')
+        # Agora vamos imprimir os fluxos diretamente nos nós
+        for node in self.nodes:
+            plt.text(node.x, node.y, f'{node.flow:.1f}', color='green', fontsize=10, ha='center')
 
         plt.scatter([node.x for node in self.nodes], [node.y for node in self.nodes], color='red', s=10)
         plt.xlim(0, 1)
@@ -144,6 +190,17 @@ class Tree:
         plt.gca().set_aspect('equal', adjustable='box')
         plt.show()
 
+
+    def print_all_nodes(self, node=None, level=0):
+        if node is None:
+            node = self.root
+        
+        # Print the current node with indentation based on its level in the tree
+        print("  " * level + f"Node at ({node.x}, {node.y}) with flow {node.flow}")
+        
+        # Recursively print all children nodes
+        for child in node.children:
+            self.print_all_nodes(child, level + 1)
 
     def plot_tree(self):
         plt.figure(figsize=(12, 12))
