@@ -10,7 +10,7 @@ class Vessel:
         self.diameter = self.compute_diameter()
         self.medium_point_y = (parent.y + child.y) / 2
         self.medium_point_x = (parent.x + child.x) / 2
-        self.medium_point_flow = parent.flow
+        self.medium_point_flow = child.flow  # Usar o fluxo do filho para calcular o ponto médio
         self.usedMedium = False
     
     def get_medium_point(self):

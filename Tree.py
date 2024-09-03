@@ -4,7 +4,6 @@ from scipy.optimize import minimize
 from Node import Node
 from Vessel import Vessel
 import numpy as np
-    
 
 class Tree:
     def __init__(self, root):
@@ -13,7 +12,24 @@ class Tree:
         self.root = root
         self.vessels = []
         self.nodes = [root]
-        self.collision_radius = 0.001  # Defina um raio de colisão mínimo
+        self.collision_radius = 0.1
+
+    def check_collision(self, x, y, parent_node):
+        margin = 0.005  # Margem de segurança adicional
+        for node in self.nodes:
+            dist = np.linalg.norm(node.position() - np.array([x, y]))
+            #print(f"Checking collision with node at ({node.x}, {node.y}) - Distance: {dist}, Threshold: {self.collision_radius + margin}")
+            if dist < (self.collision_radius + margin):
+               # print(f"Collision detected with node at ({node.x}, {node.y})")
+                return True
+
+        for vessel in self.vessels:
+            if self.do_edges_intersect(parent_node.position(), np.array([x, y]), vessel.parent.position(), vessel.child.position()):
+                print(f"Collision detected with vessel between ({vessel.parent.x}, {vessel.parent.y}) and ({vessel.child.x}, {vessel.child.y})")
+                return True
+
+        return False
+
 
     def add_terminal_node(self, x, y, flow=1.0):
         if len(self.nodes) == 1:
@@ -23,16 +39,11 @@ class Tree:
             self.vessels.append(new_vessel)
             self.nodes.append(new_node)
             self.kd_tree = KDTree([new_vessel.get_medium_point()])
-        
 
         valid_parent_node = self.find_valid_parent_node(x, y)
         if valid_parent_node is None:
             print(f"No valid parent node found for the new terminal node at ({x}, {y}). Node not added.")
-            return None
-
-        if self.check_collision(x, y, valid_parent_node):
-            print(f"Collision detected at ({x}, {y}). Node not added.")
-            return None
+            return None       
 
         new_node = Node(x, y, flow, valid_parent_node)
         new_vessel = Vessel(valid_parent_node, new_node)
@@ -43,8 +54,23 @@ class Tree:
 
         self.local_optimization(new_node)
 
+        # Propagar o fluxo de baixo para cima
+        self.update_flows(new_node)
+
         print(f"Node at ({x}, {y}) added successfully.")
         return new_node
+
+    def update_flows(self, node):
+        # Atualiza o fluxo de baixo para cima até a raiz
+        while node.parent is not None:
+            parent = node.parent
+            total_flow = sum(child.flow for child in parent.children)
+            if parent.flow != total_flow:
+                print(f"Atualizando fluxo: Nó pai ({parent.x}, {parent.y}) - Fluxo antes: {parent.flow}, Fluxo atualizado: {total_flow}")
+                parent.flow = total_flow
+            node = parent
+
+
 
     def find_nearest_node(self, x, y):
         distance, index = self.kd_tree.query((x, y))
@@ -74,20 +100,6 @@ class Tree:
                 self.nodes.append(potential_parent)
                 return potential_parent
         return None
-    
-    def medium_node_in_vessel(self, xa, xb, ya, yb):
-        return (xa + xb) / 2, (ya + yb) / 2
-
-    def check_collision(self, x, y, parent_node):
-        for node in self.nodes:
-            if np.linalg.norm(node.position() - np.array([x, y])) < self.collision_radius:
-                return True
-
-        for vessel in self.vessels:
-            if self.do_edges_intersect(parent_node.position(), np.array([x, y]), vessel.parent.position(), vessel.child.position()):
-                return True
-
-        return False
 
     def do_edges_intersect(self, p1, p2, q1, q2):
         def ccw(A, B, C):
@@ -114,6 +126,24 @@ class Tree:
             cost = (vessel.length) * (vessel.diameter ** gamma)
             total_cost += cost
         return total_cost
+
+    def plot_tree_with_flows(self):
+        plt.figure(figsize=(12, 12))
+        for vessel in self.vessels:
+            x_values = [vessel.parent.x, vessel.child.x]
+            y_values = [vessel.parent.y, vessel.child.y]
+            plt.plot(x_values, y_values, color='blue', linewidth=vessel.diameter * 2)
+
+            # Adicionando os fluxos no ponto médio dos vasos
+            mid_x, mid_y = vessel.get_medium_point()
+            plt.text(mid_x, mid_y, f'{vessel.parent.flow:.1f}', color='green', fontsize=10, ha='center')
+
+        plt.scatter([node.x for node in self.nodes], [node.y for node in self.nodes], color='red', s=10)
+        plt.xlim(0, 1)
+        plt.ylim(0, 1)
+        plt.gca().set_aspect('equal', adjustable='box')
+        plt.show()
+
 
     def plot_tree(self):
         plt.figure(figsize=(12, 12))
