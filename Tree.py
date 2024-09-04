@@ -4,6 +4,7 @@ from scipy.optimize import minimize
 from Node import Node
 from Vessel import Vessel
 import numpy as np
+from shapely.geometry import LineString, Point
 
 
 
@@ -47,7 +48,12 @@ class Tree:
             return new_node
 
         # Encontre o vaso mais próximo para adicionar o novo nó ao ponto médio
-        nearest_vessel = self.find_nearest_vessel(x, y)
+        # nearest_vessel = self.find_nearest_vessel(x, y)
+        # if nearest_vessel is None:
+        #     print(f"Nenhum vaso válido encontrado para o nó na posição ({x}, {y}).")
+        #     return None
+        
+        nearest_vessel = self.find_nearest_non_colliding_parent(x, y)
         if nearest_vessel is None:
             print(f"Nenhum vaso válido encontrado para o nó na posição ({x}, {y}).")
             return None
@@ -56,6 +62,7 @@ class Tree:
         mid_x, mid_y = nearest_vessel.get_medium_point()
         parent_node = Node(mid_x, mid_y, 0, nearest_vessel.parent)
         nearest_vessel.child.parent = parent_node
+        nearest_vessel.usedMedium = True
 
         new_node = Node(x, y, flow, parent_node)
         new_vessel1 = Vessel(parent_node, nearest_vessel.child)
@@ -146,6 +153,48 @@ class Tree:
                 self.nodes.append(potential_parent)
                 return potential_parent
         return None
+    
+    def find_non_colliding_parents_in_vessel(self, x, y):
+        non_colliding_parents = []
+        for vessel in self.vessels:
+            if not self.check_collision(x, y, vessel.medium_point_x, vessel.medium_point_y):
+                non_colliding_parents.append(vessel)
+        if len(non_colliding_parents) == 0:
+            print ("DEU RUIM")
+        return non_colliding_parents
+    
+    def check_collision(self, x0, y0, x1, y1):
+        for vessel in self.vessels:
+            v1x1, v1y1 = vessel.parent.position()
+            v1x2, v1y2 = vessel.child.position()
+            if self.do_edges_intersect([x0, y0], [x1, y1], vessel.parent.position(), vessel.child.position()):
+                return True
+        return False
+    
+    def verify_intersection(self, x0, y0, x1, y1, x2, y2, x3, y3):
+        line1 = LineString([(x0, y0), (x1, y1)])
+        line2 = LineString([(x2, y2), (x3, y3)])
+        return line1.intersects(line2)
+    
+    def find_nearest_non_colliding_parent(self, x, y):
+        non_colliding_parents = self.find_non_colliding_parents_in_vessel(x, y)
+        if len(non_colliding_parents) == 0:
+            return None
+        
+        nearest_value = 999999
+        nearest_parent = None
+        for parent in non_colliding_parents:
+            if not parent.usedMedium:
+                xn, yn = parent.get_medium_point()
+                node1_aux = Node (x, y, 0)
+                node2_aux = Node (xn, yn, 0)
+                vessel_aux = Vessel(node1_aux, node2_aux)
+                if vessel_aux.length < nearest_value:
+                    nearest_parent = parent
+                    nearest_value = vessel_aux.length
+        return nearest_parent
+    
+            
 
     def do_edges_intersect(self, p1, p2, q1, q2):
         def ccw(A, B, C):

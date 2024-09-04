@@ -9,8 +9,8 @@ def generate_terminal_points(num_points, space_size=1.0):
     return points, flows
 
 def main():
-    num_terminals = 5  # Ajustando para N terminais
-    root = Node(0.1, 0.1, flow=0)  # Inicialize com fluxo zero
+    num_terminals = 10  # Ajustando para N terminais
+    root = Node(0.5, 0.98, flow=0)  # Inicialize com fluxo zero
     tree = Tree(root)
 
     terminal_points, _ = generate_terminal_points(num_terminals)
